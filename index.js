@@ -3,9 +3,9 @@ const axios = require('axios');
 const bodyParser = require('body-parser');
 const app = express().use(bodyParser.json());
 
-const PAGE_ACCESS_TOKEN = 'YOUR_FACEBOOK_PAGE_TOKEN';
-const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY';
-const VERIFY_TOKEN = 'my_secret_token_123'; // এটি ফেসবুকে বসাতে হবে
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
 // ১. ফেসবুক ভেরিফিকেশন (GET Method)
 app.get('/webhook', (req, res) => {
