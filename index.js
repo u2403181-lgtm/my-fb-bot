@@ -5,7 +5,7 @@ const app = express().use(bodyParser.json());
 
 // --- ১. কনফিগারেশন (Environment Variables থেকে আসবে) ---
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const GEMINI_API_KEY = AIzaSyCW1PoR3cpBHR22u8OSKc8hU-Dq1DRsLro;
+const GEMINI_API_KEY = 'AIzaSyCW1PoR3cpBHR22u8OSKc8hU-Dq1DRsLro';
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1YzWDZ9RRTe2-G7kFXXjal82waklsveGpkASEMFakKc8/edit?usp=sharing'; // এখানে আপনার Apps Script URL বসান
 
