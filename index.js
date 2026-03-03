@@ -3,72 +3,120 @@ const axios = require('axios');
 const bodyParser = require('body-parser');
 const app = express().use(bodyParser.json());
 
+// --- ১. কনফিগারেশন (Environment Variables থেকে আসবে) ---
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const GOOGLE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1YzWDZ9RRTe2-G7kFXXjal82waklsveGpkASEMFakKc8/edit?usp=sharing'; // এখানে আপনার Apps Script URL বসান
 
-// ১. ফেসবুক ভেরিফিকেশন (GET Method)
+// --- ২. ফেসবুক ভেরিফিকেশন (GET Method) ---
 app.get('/webhook', (req, res) => {
   let mode = req.query['hub.mode'];
   let token = req.query['hub.verify_token'];
   let challenge = req.query['hub.challenge'];
+
   if (mode && token === VERIFY_TOKEN) {
+    console.log('WEBHOOK_VERIFIED');
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// ২. মেসেজ রিসিভ করা (POST Method)
+// --- ৩. মেসেজ রিসিভ করা (POST Method) ---
 app.post('/webhook', async (req, res) => {
   let body = req.body;
+
   if (body.object === 'page') {
-    for (let entry of body.entry) {
-      let event = entry.messaging[0];
-      let sender_id = event.sender.id;
-      if (event.message && event.message.text) {
-        handleLogic(sender_id, event.message.text.trim());
+    body.entry.forEach(async function(entry) {
+      let webhook_event = entry.messaging[0];
+      let sender_id = webhook_event.sender.id;
+
+      if (webhook_event.message && webhook_event.message.text) {
+        let user_message = webhook_event.message.text.trim();
+        console.log(`Message from ${sender_id}: ${user_message}`);
+        
+        // বটের লজিক ফাংশন কল করা
+        handleLogic(sender_id, user_message);
       }
-    }
+    });
     res.status(200).send('EVENT_RECEIVED');
+  } else {
+    res.sendStatus(404);
   }
 });
 
-// ৩. পার্ট-বাই-পার্ট ডেটা আইডেন্টিফিকেশন লজিক
+// --- ৪. মূল লজিক এবং Gemini AI প্রসেসিং ---
 async function handleLogic(sender_id, user_text) {
-  // দ্রষ্টব্য: এখানে ইউজারের ডেটা মেমোরিতে সাময়িকভাবে রাখার জন্য 
-  // একটি ডাটাবেস (যেমন MongoDB) বা সিম্পল অবজেক্ট ব্যবহার করা যায়।
-  // আপাতত আমরা সরাসরি Gemini কে দিয়ে চেক করাবো।
-  
-  const prompt = `Extract Name, Phone, Problem from: "${user_text}". 
-  If any field is missing, put "N/A". Output strictly JSON: {"name":"..","phone":"..","problem":".."}`;
+  // Gemini-র জন্য প্রম্পট (ডেটা এক্সট্র্যাক্ট করার জন্য)
+  const prompt = `Extract exactly Name, Phone, and Problem from this text: "${user_text}". 
+  If any field is missing, use "N/A". 
+  Output MUST be strictly in JSON format like this: {"name": "...", "phone": "...", "problem": "..."}`;
 
   try {
-    const response = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-      contents: [{ parts: [{ text: prompt }] }]
-    });
-    
+    // Gemini API কল
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      { contents: [{ parts: [{ text: prompt }] }] }
+    );
+
     const resultText = response.data.candidates[0].content.parts[0].text;
-    const data = JSON.parse(resultText.match(/\{.*\}/s)[0]);
+    const jsonMatch = resultText.match(/\{.*\}/s);
+    
+    if (jsonMatch) {
+      const data = JSON.parse(jsonMatch[0]);
 
-    if (data.name === "N/A") {
-      sendMessage(sender_id, "আপনার নামটি বলুন।");
-    } else if (data.phone === "N/A") {
-      sendMessage(sender_id, "আপনার মোবাইল নম্বরটি দিন।");
-    } else if (data.problem === "N/A") {
-      sendMessage(sender_id, "আপনার সমস্যাটি কি?");
-    } else {
-      sendMessage(sender_id, `ধন্যবাদ ${data.name}! আপনার ফোন (${data.phone}) ও সমস্যা নথিভুক্ত করা হয়েছে।`);
-      // এখানে Google Sheets API কল করে ডেটা সেভ করতে হবে।
+      // ৫. ডেটা কি সম্পূর্ণ? চেক করা
+      if (data.name === "N/A") {
+        sendMessage(sender_id, "আপনার নামটি কি দয়া করে বলবেন?");
+      } else if (data.phone === "N/A") {
+        sendMessage(sender_id, `ধন্যবাদ ${data.name}! আপনার সাথে যোগাযোগ করার জন্য একটি ফোন নম্বর দিন।`);
+      } else if (data.problem === "N/A") {
+        sendMessage(sender_id, "আপনার সমস্যাটি বিস্তারিত লিখুন যাতে আমরা সমাধান করতে পারি।");
+      } else {
+        // সব ডেটা পাওয়া গেছে -> Google Sheet-এ সেভ করা
+        sendMessage(sender_id, `ধন্যবাদ ${data.name}! আপনার তথ্যগুলো রেকর্ড করা হয়েছে। আমাদের প্রতিনিধি শীঘ্রই যোগাযোগ করবেন।`);
+        saveToSheet(data);
+      }
     }
-  } catch (e) { console.log("Error:", e); }
+  } catch (error) {
+    console.error("Gemini or Logic Error:", error.message);
+    sendMessage(sender_id, "দুঃখিত, আমি এই মুহূর্তে প্রসেস করতে পারছি না। আবার চেষ্টা করুন।");
+  }
 }
 
-async function sendMessage(id, text) {
-  await axios.post(`https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-    recipient: { id: id },
-    message: { text: text }
-  });
+// --- ৬. Google Sheet-এ ডেটা পাঠানো ---
+async function saveToSheet(data) {
+  try {
+    await axios.post(GOOGLE_SHEET_URL, data);
+    console.log("Data successfully sent to Google Sheet!");
+  } catch (error) {
+    console.error("Sheet Saving Error:", error.message);
+  }
 }
 
-app.listen(process.env.PORT || 3000, () => console.log('Webhook is listening'));
+// --- ৭. ফেসবুক মেসেজ পাঠানো (Send API) ---
+async function sendMessage(recipientId, messageText) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v15.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        recipient: { id: recipientId },
+        message: { text: messageText }
+      }
+    );
+  } catch (error) {
+    console.error("Facebook Send Error:", error.response ? error.response.data : error.message);
+  }
+}
+
+// --- ৮. সার্ভার চালু করা ---
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running! Webhook is listening on port ${PORT}`);
+});
+
+// রেন্ডার হেলথ চেক (ব্রাউজারে লিঙ্ক চেক করার জন্য)
+app.get('/', (req, res) => {
+  res.send('Bot is Online and Working!');
+});
