@@ -7,7 +7,7 @@ const app = express().use(bodyParser.json());
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const SAMBANOVA_API_KEY = '2250c538-c5f1-4edf-8db2-1880c38f35f0'; // আপনার SambaNova API Key
-const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycby-xS90L-KxR2Y4jW0y4R8vI_Kz-B6XvD5P_P4L0_P_P4L0/exec'; 
+const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwLpwq8sNQ_eHoHb2cLflCxpoIKSazkqKdZK7WHSoJ9Kpiol8uSlIGrPxQDwClZsLsK/exec'; 
 
 // --- ২. ফেসবুক ভেরিফিকেশন (GET) ---
 app.get('/webhook', (req, res) => {
