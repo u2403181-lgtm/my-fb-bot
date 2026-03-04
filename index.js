@@ -5,7 +5,7 @@ const app = express().use(require('body-parser').json());
 // --- কনফিগারেশন ---
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const SAMBANOVA_API_KEY = '2250c538-c5f1-4edf-8db2-1880c38f35f0'; 
+const SAMBANOVA_API_KEY = 'AIzaSyB6IzFFU3ybMUAe4IsVimIM-kQSYEoDo_k'; 
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwLpwq8sNQ_eHoHb2cLflCxpoIKSazkqKdZK7WHSoJ9Kpiol8uSlIGrPxQDwClZsLsK/exec'; 
 
 // ফেসবুক ভেরিফিকেশন
