@@ -1,123 +1,79 @@
 const express = require('express');
 const axios = require('axios');
-const bodyParser = require('body-parser');
-const app = express().use(bodyParser.json());
+const app = express().use(require('body-parser').json());
 
-// --- ১. কনফিগারেশন ---
+// --- কনফিগারেশন ---
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const SAMBANOVA_API_KEY = '2250c538-c5f1-4edf-8db2-1880c38f35f0'; // আপনার SambaNova API Key
-const GOOGLE_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwLpwq8sNQ_eHoHb2cLflCxpoIKSazkqKdZK7WHSoJ9Kpiol8uSlIGrPxQDwClZsLsK/exec'; 
+const SAMBANOVA_API_KEY = '2250c538-c5f1-4edf-8db2-1880c38f35f0'; 
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwLpwq8sNQ_eHoHb2cLflCxpoIKSazkqKdZK7WHSoJ9Kpiol8uSlIGrPxQDwClZsLsK/exec'; 
 
-// --- ২. ফেসবুক ভেরিফিকেশন (GET) ---
+// ফেসবুক ভেরিফিকেশন
 app.get('/webhook', (req, res) => {
-  let mode = req.query['hub.mode'];
-  let token = req.query['hub.verify_token'];
-  let challenge = req.query['hub.challenge'];
-
-  if (mode && token === VERIFY_TOKEN) {
-    res.status(200).send(challenge);
+  if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
+    res.status(200).send(req.query['hub.challenge']);
   } else {
     res.sendStatus(403);
   }
 });
 
-// --- ৩. মেসেজ রিসিভ করা (POST) ---
+// মেসেজ প্রসেসিং
 app.post('/webhook', async (req, res) => {
-  let body = req.body;
-
+  const body = req.body;
   if (body.object === 'page') {
-    body.entry.forEach(async function(entry) {
-      let webhook_event = entry.messaging[0];
-      let sender_id = webhook_event.sender.id;
+    for (const entry of body.entry) {
+      const event = entry.messaging[0];
+      const sender_id = event.sender.id;
+      
+      if (event.message && event.message.text) {
+        const text = event.message.text;
 
-      if (webhook_event.message && webhook_event.message.text) {
-        let user_message = webhook_event.message.text.trim();
-        console.log(`Message from ${sender_id}: ${user_message}`);
-        handleLogic(sender_id, user_message);
-      }
-    });
-    res.status(200).send('EVENT_RECEIVED');
-  } else {
-    res.sendStatus(404);
-  }
-});
+        // ১. ডিফল্ট ব্যাকআপ ডাটা
+        let finalData = { 
+          name: text.split(/[ ,।]/)[0] || "User", 
+          phone: (text.match(/01\d{9}/) || ["N/A"])[0], 
+          problem: text 
+        };
 
-// --- ৪. SambaNova AI লজিক ---
-async function handleLogic(sender_id, user_text) {
-  const prompt = `Extract Name, Phone, and Problem from the following text: "${user_text}". 
-  Return ONLY a JSON object: {"name": "...", "phone": "...", "problem": "...", "is_greeting": false}. 
-  If the text is just a greeting (like hi, hello, kemon achen), set "is_greeting": true. 
-  Use "N/A" for missing fields.`;
+        try {
+          // ২. AI কল (৫ সেকেন্ড লিমিট)
+          const aiRes = await axios.post('https://api.sambanova.ai/v1/chat/completions', {
+            model: "Meta-Llama-3.1-8B-Instruct",
+            messages: [{ role: "user", content: `Extract Name, Phone, Problem from: "${text}" as JSON.` }],
+            response_format: { type: "json_object" }
+          }, { 
+            headers: { 'Authorization': `Bearer ${SAMBANOVA_API_KEY}` },
+            timeout: 5000 
+          });
+          finalData = JSON.parse(aiRes.data.choices[0].message.content);
+        } catch (e) {
+          console.log("AI error, using backup...");
+        }
 
-  try {
-    const response = await axios.post(
-      'https://api.sambanova.ai/v1/chat/completions',
-      {
-        model: "Meta-Llama-3.1-8B-Instruct",
-        messages: [
-          { role: "system", content: "You are a helpful assistant that outputs only JSON." },
-          { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${SAMBANOVA_API_KEY}`,
-          'Content-Type': 'application/json'
+        // ৩. শিটে ডাটা পাঠানো
+        if (finalData.phone !== "N/A") {
+          try {
+            await axios.post(SHEET_URL, finalData);
+            sendMessage(sender_id, `ধন্যবাদ ${finalData.name}! আপনার তথ্য ও সমস্যাটি আমরা সেভ করেছি।`);
+          } catch (sheetErr) {
+            sendMessage(sender_id, "দুঃখিত, ডাটা সেভ করতে সমস্যা হয়েছে।");
+          }
+        } else {
+          sendMessage(sender_id, "দয়া করে আপনার নাম এবং সঠিক ফোন নম্বরটি লিখুন।");
         }
       }
-    );
-
-    const resultText = response.data.choices[0].message.content;
-    const data = JSON.parse(resultText);
-
-    if (data.is_greeting) {
-      sendMessage(sender_id, "হ্যালো! আমি আপনাকে কীভাবে সাহায্য করতে পারি? আপনার নাম, ফোন নম্বর ও সমস্যার কথাটি লিখুন।");
-    } else if (data.name !== "N/A" && data.phone !== "N/A") {
-      sendMessage(sender_id, `ধন্যবাদ ${data.name}! আপনার তথ্যগুলো আমি সংগ্রহ করেছি। শীঘ্রই আমাদের প্রতিনিধি যোগাযোগ করবেন।`);
-      saveToSheet(data);
-    } else {
-      sendMessage(sender_id, "আপনার নাম এবং ফোন নম্বরসহ সমস্যাটি বিস্তারিত লিখুন যাতে আমি সেটি নোট করতে পারি।");
     }
-
-  } catch (error) {
-    console.error("AI Error:", error.response ? error.response.data : error.message);
-    sendMessage(sender_id, "দুঃখিত, আমি আপনার কথাটি বুঝতে পারিনি। দয়া করে নাম ও নম্বরসহ আবার লিখুন।");
+    res.status(200).send('EVENT_RECEIVED');
   }
-}
-
-// --- ৫. Google Sheet-এ ডেটা পাঠানো ---
-async function saveToSheet(data) {
-  try {
-    await axios.post(GOOGLE_SHEET_URL, data);
-    console.log("Data saved to Sheet!");
-  } catch (error) {
-    console.error("Sheet Error:", error.message);
-  }
-}
-
-// --- ৬. ফেসবুক মেসেজ পাঠানো ---
-async function sendMessage(recipientId, messageText) {
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v15.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-      {
-        recipient: { id: recipientId },
-        message: { text: messageText }
-      }
-    );
-  } catch (error) {
-    console.error("FB Send Error:", error.message);
-  }
-}
-
-// --- ৭. সার্ভার রান করা ---
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
 });
 
-app.get('/', (req, res) => {
-  res.send('Bot is Online with SambaNova!');
-});
+async function sendMessage(id, txt) {
+  try {
+    await axios.post(`https://graph.facebook.com/v15.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+      recipient: { id: id }, message: { text: txt }
+    });
+  } catch (err) { console.error("FB Send Error"); }
+}
+
+app.get('/', (req, res) => res.send('Bot is Running!'));
+app.listen(process.env.PORT || 10000);
