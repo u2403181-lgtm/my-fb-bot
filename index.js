@@ -76,8 +76,11 @@ async function handleLogic(sender_id, user_text) {
       }
     }
   } catch (error) {
-    console.error("Gemini Error:", error.message);
-    sendMessage(sender_id, "হ্যালো! আপনার কোনো সমস্যা থাকলে নাম ও ফোন নম্বরসহ বিস্তারিত জানাতে পারেন।");
+    // এররটি কনসোলে প্রিন্ট করুন যাতে আপনি রেন্ডারে দেখতে পারেন
+    console.log("Detailed Error:", error.response ? error.response.data : error.message);
+    
+    // ইউজারকে একটি সাধারণ ব্যাকআপ মেসেজ দিন
+    sendMessage(sender_id, "আমি আপনার মেসেজটি পেয়েছি, কিন্তু প্রসেস করতে একটু সমস্যা হচ্ছে। দয়া করে আবার চেষ্টা করুন।");
   }
 }
 
